@@ -140,19 +140,19 @@ except ValueError as e:
     if 'a boolean' in error_string:
         output(2,'\n [1]ERROR','<red>', f"\'{error_string.rsplit('boolean: ')[1]}\' is malformed in the configuration file! This value can only be True or False\n\
             {6*' '}Read the Wiki > Explanation of provided programs & their functionality > config.ini")
-        open_url('https://github.com/Avnsx/fansly-downloader/wiki/Explanation-of-provided-programs-&-their-functionality#4-configini')
+        open_url('https://github.com/RalkeyOfficial/fansly-downloader/wiki/Explanation-of-provided-programs-&-their-functionality#explanation-of-configini')
         input('\nPress Enter to close ...')
         exit()
     else:
         output(2,'\n [2]ERROR','<red>', f"You have entered a wrong value in the config.ini file -> \'{error_string}\'\n\
             {6*' '}Read the Wiki > Explanation of provided programs & their functionality > config.ini")
-        open_url('https://github.com/Avnsx/fansly-downloader/wiki/Explanation-of-provided-programs-&-their-functionality#4-configini')
+        open_url('https://github.com/RalkeyOfficial/fansly-downloader/wiki/Explanation-of-provided-programs-&-their-functionality#explanation-of-configini')
         input('\nPress Enter to close ...')
         exit()
 except (KeyError, NameError) as key:
     output(2,'\n [3]ERROR','<red>', f"\'{key}\' is missing or malformed in the configuration file!\n\
         {6*' '}Read the Wiki > Explanation of provided programs & their functionality > config.ini")
-    open_url('https://github.com/Avnsx/fansly-downloader/wiki/Explanation-of-provided-programs-&-their-functionality#4-configini')
+    open_url('https://github.com/RalkeyOfficial/fansly-downloader/wiki/Explanation-of-provided-programs-&-their-functionality#explanation-of-configini')
     input('\nPress Enter to close ...')
     exit()
 
@@ -196,7 +196,7 @@ def remind_stargazing():
                      'accept-language': 'en-US,en;q=0.9'}
     
     # get total_downloads count
-    stargazers_check_request = requests.get('https://api.github.com/repos/avnsx/fansly-downloader/releases', allow_redirects = True, headers = stats_headers)
+    stargazers_check_request = requests.get('https://api.github.com/repos/RalkeyOfficial/fansly-downloader/releases', allow_redirects = True, headers = stats_headers)
     if not stargazers_check_request.ok:
         return False
     stargazers_check_request = stargazers_check_request.json()
@@ -204,7 +204,7 @@ def remind_stargazing():
         total_downloads += x['assets'][0]['download_count'] or 0
     
     # get stargazers_count
-    downloads_check_request = requests.get('https://api.github.com/repos/avnsx/fansly-downloader', allow_redirects = True, headers = stats_headers)
+    downloads_check_request = requests.get('https://api.github.com/repos/RalkeyOfficial/fansly-downloader', allow_redirects = True, headers = stats_headers)
     if not downloads_check_request.ok:
         return False
     downloads_check_request = downloads_check_request.json()
@@ -349,7 +349,7 @@ if plyvel_installed and any([not config_token, 'ReplaceMe' in config_token, conf
         output(2,'\n ERROR','<red>', f"Your Fansly account was not found in any of your browser\'s local storage.\n\
         {10*' '}Did you not recently browse Fansly with an authenticated session?\
         {10*' '}Please read & apply the \'Get-Started\' tutorial instead.")
-        open_url('https://github.com/Avnsx/fansly-downloader/wiki/Get-Started')
+        open_url('https://github.com/RalkeyOfficial/fansly-downloader/wiki/Get-Started')
         input('\n Press Enter to close ..')
         exit()
     
@@ -357,7 +357,7 @@ if plyvel_installed and any([not config_token, 'ReplaceMe' in config_token, conf
     elif any([not config_token, 'ReplaceMe' in config_token]) or config_token and len(config_token) < 50:
         output(2,'\n ERROR','<red>', f"Reached the end and the authentication token in config.ini file is still invalid!\n\
         {10*' '}Please read & apply the \'Get-Started\' tutorial instead.")
-        open_url('https://github.com/Avnsx/fansly-downloader/wiki/Get-Started')
+        open_url('https://github.com/RalkeyOfficial/fansly-downloader/wiki/Get-Started')
         input('\n Press Enter to close ..')
         exit()
 
