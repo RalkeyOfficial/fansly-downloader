@@ -133,7 +133,7 @@ Executable currently not available
 #### Python Version Requirements
 If your operating system is not compatible with **executable versions** of Fansly Downloader (only Windows supported for ``.exe``) or you just generally intend to use the Python source directly, please [download the repository](https://github.com/RalkeyOfficial/fansly-downloader/archive/refs/heads/master.zip), extract the files from the folder and ensure that [Python is installed](https://www.python.org/downloads/) on your system. Once Python is installed, you can proceed by installing the following requirements using [Python's package manager](https://realpython.com/what-is-pip/) (``"pip"``), within your systems terminal copy & paste:
 
-	pip3 install requests loguru python-dateutil plyvel-ci psutil imagehash m3u8 av pillow rich pyexiv2 mutagen
+	pip3 install requests loguru python-dateutil plyvel-ci psutil imagehash m3u8 av pillow rich pyexiv2 mutagen python-ffmpeg
 Alternatively you can use [``requirements.txt``](https://github.com/RalkeyOfficial/fansly-downloader/blob/master/requirements.txt) through opening your system's terminal (e.g.: ``cmd.exe`` on windows), [navigating to the project's download folder](https://youtu.be/8-mYKkNzjU4?t=5) and executing the following command: ``pip3 install --user -r requirements.txt``
 
 For Linux operating systems, you may need to install the Python Tkinter module separately by using the command ``sudo apt-get install python3-tk``. On Windows and macOS, the Tkinter module is typically included in the [Python installer itself](https://youtu.be/O2PzLeiBEuE?t=38).
