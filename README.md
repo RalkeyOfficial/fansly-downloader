@@ -1,3 +1,10 @@
+<div align="center">
+   This is a fork of ![Avnsx/fansly-downloader](https://github.com/Avnsx/fansly-downloader)
+   to try and revive the project <br>
+   I am not a good Python developer so any help with this project is very much appreciated <br>
+   You can see the to-do list for this project at [#📃 To do list](#📃 To do list)
+</div>
+
 <div align="center" style="font-size: smaller;">
   <h1>👋 Introducing <code>Fansly Downloader</code>: The Ultimate Content Downloading Tool</h1>
 </div>
@@ -187,6 +194,9 @@ A heartfelt thank you goes out to [@liviaerxin](https://github.com/liviaerxin) f
 
 ## 🛡️ License
 This project (including executables) is licensed under the GPL-3.0 License - see the [`LICENSE`](LICENSE) file for details.
+
+## 📃 To do list
+- `download_mpd()` should show a progress bar like `download_m3u8()`
 
 ## Disclaimer
 "Fansly" or [fansly.com](https://fansly.com/) is operated by Select Media LLC as stated on their "Contact" page. This repository and the provided content in it isn't in any way affiliated with, sponsored by, or endorsed by Select Media LLC or "Fansly". The developer(referred to: "Avnsx" in the following) of this code is not responsible for the end users actions, no unlawful activities of any kind are being encouraged. Statements and processes described in this repository only represent best practice guidance aimed at fostering an effective software usage. The repository was written purely for educational purposes, in an entirely theoretical environment. Thus, any information is presented on the condition that the developer of this code shall not be held liable in no event to you or anyone else for any direct, special, incidental, indirect or consequential damages of any kind, or any damages whatsoever, including without limitation, loss of profit, loss of use, savings or revenue, or the claims of third parties, whether the developer has advised of the possibility of such loss, however caused and on any theory of liability, arising out of or in connection with the possession, use or performance of this software. The material embodied in this repository is supplied to you "as-is" and without warranty of any kind, express, implied or otherwise, including without limitation, any warranty of fitness. This code does not bypass any paywalls & no end user information is collected during usage. Finally it is important to note that this GitHub repository is the sole branch maintained and owned by the developer and any third-party websites or entities, that might refer to or be referred from it are in no way affiliated with Fansly Downloader, either directly or indirectly. This disclaimer is preliminary and is subject to revision.
