@@ -168,7 +168,7 @@ def handle_update(current_version: str, release: dict):
 
 def check_latest_release(update_version: str = 0, current_version: str = 0, intend: str = None): # intend: update / check
     try:
-        url = f"https://api.github.com/repos/avnsx/fansly-downloader/releases/latest"
+        url = f"https://github.com/RalkeyOfficial/fansly-downloade/releases/latest"
         response = requests.get(url, allow_redirects = True, headers={'user-agent': f'Fansly Downloader {update_version if update_version is not None else current_version}', 'accept-language': 'en-US,en;q=0.9'})
         response.raise_for_status()
     except Exception:
