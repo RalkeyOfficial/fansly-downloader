@@ -10,3 +10,4 @@ m3u8>=3.0.0
 rich>=13.0.0
 mutagen>=1.46.0
 pyexiv2>=2.8.2
+python-ffmpeg>=2.0.12

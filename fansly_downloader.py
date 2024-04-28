@@ -13,6 +13,8 @@ from os.path import join, exists
 from os import makedirs, getcwd
 from utils.update_util import delete_deprecated_files, check_latest_release, apply_old_config_values
 from utils.metadata_manager import MetadataManager
+import xml.etree.ElementTree as ET
+from ffmpeg import FFmpeg
 
 # tell PIL to be tolerant of files that are truncated
 ImageFile.LOAD_TRUNCATED_IMAGES = True
@@ -598,6 +600,7 @@ def download_m3u8(m3u8_url: str, save_path: str):
         'CloudFront-Key-Pair-Id': key_pair_id,
         'CloudFront-Policy': policy,
         'CloudFront-Signature': signature,
+        'ngsw-bypass': 'true'
     }
 
     # download the m3u8 playlist
@@ -627,7 +630,7 @@ def download_m3u8(m3u8_url: str, save_path: str):
     text_column = TextColumn(f"", table_column=Column(ratio=0.355))
     bar_column = BarColumn(bar_width=60, table_column=Column(ratio=2))
     disable_loading_bar = False if len(ts_files) > 15 else True
-    progress = Progress(text_column, bar_column, expand=True, transient=True, disable = disable_loading_bar)
+    progress = Progress(text_column, bar_column, expand=True, transient=True, disable=disable_loading_bar)
     with progress:
         with concurrent.futures.ThreadPoolExecutor() as executor:
             ts_contents = [file for file in progress.track(executor.map(download_ts, ts_files), total=len(ts_files))]
@@ -668,6 +671,99 @@ def download_m3u8(m3u8_url: str, save_path: str):
 
     return True
 
+def download_mpd(mpd_url: str, save_path: str):
+    # parse mpd_url for required strings
+    parsed_url = {k: v for k, v in [s.split('=') for s in mpd_url.split('?')[-1].split('&')]}
+    policy = parsed_url.get('Policy')
+    key_pair_id = parsed_url.get('Key-Pair-Id')
+    signature = parsed_url.get('Signature')
+    mpd_url = mpd_url.split('.mpd')[0] + '.mpd'  # re-construct original .mpd base link
+    save_path = save_path.rsplit('.mpd')[0] + ".mp4"  # remove file_extension from save_path
+
+    cookies = {
+        'CloudFront-Key-Pair-Id': key_pair_id,
+        'CloudFront-Policy': policy,
+        'CloudFront-Signature': signature,
+        'ngsw-bypass': 'true'
+    }
+
+    # Send a GET request to the MPD URL
+    playlist_content = sess.get(mpd_url, headers=headers, cookies=cookies)
+    if not playlist_content.ok:
+        output(2, '\n [12]ERROR', '<red>', f'Failed downloading mpd; at playlist_content request. Response code: {playlist_content.status_code}\n{playlist_content.text}')
+        return False
+
+    # Parse the MPD XML file
+    root = ET.fromstring(playlist_content.content)
+
+    # Find the highest quality video and audio representations
+    video_representations = root.findall('.//{urn:mpeg:dash:schema:mpd:2011}AdaptationSet[@mimeType="video/mp4"]/{urn:mpeg:dash:schema:mpd:2011}Representation')
+    audio_representations = root.findall('.//{urn:mpeg:dash:schema:mpd:2011}AdaptationSet[@mimeType="audio/mp4"]/{urn:mpeg:dash:schema:mpd:2011}Representation')
+
+    highest_quality_video = max(video_representations, key=lambda x: int(x.attrib['bandwidth']))
+    highest_quality_audio = max(audio_representations, key=lambda x: int(x.attrib['bandwidth']))
+
+    # Extract the BaseURLs from the highest quality video and audio representations
+    video_base_url = highest_quality_video.find('{urn:mpeg:dash:schema:mpd:2011}BaseURL').text
+    audio_base_url = highest_quality_audio.find('{urn:mpeg:dash:schema:mpd:2011}BaseURL').text
+
+    # Construct the full URLs for the video and audio files
+    base_url = '/'.join(mpd_url.split('/')[:-1]) + '/'
+    video_url = base_url + video_base_url
+    audio_url = base_url + audio_base_url
+
+    # Create a hidden temp folder to store downloads in
+    hidden_folder_dir = ".temp"
+    os_name = platform.system()
+    if os_name == 'Windows':
+        # Create the folder if it doesn't exist
+        if not os.path.exists(hidden_folder_dir):
+            os.mkdir(hidden_folder_dir)
+
+        # Set the folder's hidden attribute in Windows
+        subprocess.run(['attrib', '+h', hidden_folder_dir], check=True)
+    else:
+        if not os.path.exists(hidden_folder_dir):
+            os.mkdir(hidden_folder_dir)
+
+    def download_file(url, file_path):
+        res = sess.get(url, headers=headers, cookies=cookies, stream=True)
+        res.raise_for_status()  # Raise an exception if the request fails
+        with open(file_path, 'wb') as f:
+            for chunk in res.iter_content(chunk_size=1024):
+                f.write(chunk)
+
+    # file names
+    video_file = "temp_video.mp4"
+    audio_file = "temp_audio.mp4"
+
+    # hidden temp folder + file names
+    video_file_path = os.path.join(hidden_folder_dir, video_file)
+    audio_file_path = os.path.join(hidden_folder_dir, audio_file)
+
+    # start download of the video and audio, and put it in the hidden folder
+    download_file(video_url, video_file_path)
+    download_file(audio_url, audio_file_path)
+
+    # combine the video and audio together into 1 file
+    # I am aware that using FFMPEG is not the best practice, however I don't know of any better alternative
+    ffmpeg = (
+        FFmpeg()
+        .option("y")
+        .input(video_file_path)
+        .input(audio_file_path)
+        .output(
+            save_path,
+            codec="copy",
+        )
+    )
+    ffmpeg.execute()
+
+    # remove the video and audio file in the temp folder
+    os.remove(video_file_path)
+    os.remove(audio_file_path)
+
+    return True
 
 
 # define base threshold (used for when modules don't provide vars)
@@ -707,7 +803,7 @@ def sort_download(accessible_media: dict):
         file_extension = post['file_extension']
         is_preview = post['is_preview']
         metadata_manager = MetadataManager()
-        ext_sup = metadata_manager.is_file_supported('mp4' if file_extension == 'm3u8' else file_extension)
+        ext_sup = metadata_manager.is_file_supported('mp4' if (file_extension == 'm3u8' or 'mpd') else file_extension)
         append_metadata = metadata_handling == 'Advanced' and ext_sup if metadata_handling == 'Advanced' and ext_sup else False
 
         # verify that the duplicate count has not drastically spiked and in-case it did; verify that the spiked amount is significant enough to cancel scraping
@@ -772,7 +868,7 @@ def sort_download(accessible_media: dict):
 
         if file_extension == 'm3u8':
             # handle the download of a m3u8 file
-            file_downloaded = download_m3u8(m3u8_url = download_url, save_path = save_path)
+            file_downloaded = download_m3u8(m3u8_url=download_url, save_path=save_path)
             if file_downloaded:
                 # after being transcoded, the file is now a mp4
                 save_path = save_path.replace('.m3u8', '.mp4')
@@ -783,8 +879,25 @@ def sort_download(accessible_media: dict):
                     metadata_manager.add_metadata()
                     metadata_manager.save()
                     # add filehash to the transcoded mp4 file
-                    hash_audio_video(save_path, content_format = 'video')
-                pic_count += 1 if 'image' in mimetype else 0; vid_count += 1 if 'video' in mimetype else 0
+                    hash_audio_video(save_path, content_format='video')
+                pic_count += 1 if 'image' in mimetype else 0
+                vid_count += 1 if 'video' in mimetype else 0
+        elif file_extension == 'mpd':
+            # handle the download of a mpd file
+            file_downloaded = download_mpd(mpd_url=download_url, save_path=save_path)
+            if file_downloaded:
+                # after being transcoded, the file is now a mp4
+                save_path = save_path.replace('.mpd', '.mp4')
+                file_extension = 'mp4'
+                if append_metadata:
+                    # add the temp-stored media_id to the now transcoded mp4 file, as Exif metadata
+                    metadata_manager.set_filepath(save_path)
+                    metadata_manager.add_metadata()
+                    metadata_manager.save()
+                    # add filehash to the transcoded mp4 file
+                    hash_audio_video(save_path, content_format='video')
+                pic_count += 1 if 'image' in mimetype else 0
+                vid_count += 1 if 'video' in mimetype else 0
         else:
             # handle the download of a normal media file
             response = sess.get(download_url, stream=True, headers=headers)
@@ -878,11 +991,8 @@ def sort_download(accessible_media: dict):
                 output(2,'\n [13]ERROR','<red>', f"Download failed on filename: {filename} - due to an network error --> status_code: {response.status_code} | content: \n{response.content}")
                 input()
                 exit()
-    s(uniform(2, 4)) # slow down to avoid the fansly rate-limit, which was introduced in late august 2023
-
+    s(uniform(30, 60)) # slow down to avoid the fansly rate-limit, which was introduced in late august 2023
     # all functions call sort_download at the end; which means we leave this function open ended, so that the python executor can get back into executing in global space @ the end of the global space code / loop this function repetetively as seen in timeline code
-
-
 
 # whole code uses this; whenever any json response needs to get parsed from fansly api
 def parse_media_info(media_info: dict, post_id = None):
@@ -899,9 +1009,11 @@ def parse_media_info(media_info: dict, post_id = None):
             is_preview = False
 
     def simplify_mimetype(mimetype: str):
-        if mimetype == 'application/vnd.apple.mpegurl':
+        if mimetype == 'application/vnd.apple.mpegurl': # m3u8
             mimetype = 'video/mp4'
-        elif mimetype == 'audio/mp4': # another bug in fansly api, where audio is served as mp4 filetype ..
+        elif mimetype == 'application/dash+xml': # mpd
+            mimetype = 'video/mp4'
+        elif mimetype == 'audio/mp4': # another bug in fansly api, where audio is served as mp4 filetype.
             mimetype = 'audio/mp3' # i am aware that the correct mimetype would be "audio/mpeg", but we just simplify it
         return mimetype
 
@@ -933,7 +1045,7 @@ def parse_media_info(media_info: dict, post_id = None):
     def parse_variant_metadata(variant_metadata: str):
         variant_metadata = json.loads(variant_metadata)
         max_variant = max(variant_metadata['variants'], key=lambda variant: variant['h'], default=None)
-        # if a heighest height is not found, we just hope 1080p is available
+        # if a highest height is not found, we just hope 1080p is available
         if not max_variant:
             return 1080
         # else parse through variants and find highest height
@@ -941,13 +1053,75 @@ def parse_media_info(media_info: dict, post_id = None):
             max_variant['w'], max_variant['h'] = max_variant['h'], max_variant['w']
         return max_variant['h']
 
-    def parse_variants(content: dict, content_type: str): # content_type: media / preview
+    def m3u8_has_data(location: dict):
+        """
+        Fansly's API has something I like to call red herrings,
+        which is m3u8 file with no data in it.
+        there is no information in the API itself dictating if the m3u8 has data in it,
+        so I test it out by checking if it returns 200 & has .ts files in it.
+
+        Note:
+        This will slow down the program by quite a bit due to the extra GET requests
+        I would prefer to not have to do this, but I have no choice
+        """
+        location_url: str = location['location']
+        extension = location_url.split('.')[-1].split('?')[0]
+
+        if not 'Key-Pair-Id' in location_url and extension == "m3u8":
+            try:
+                cookies = {
+                    'CloudFront-Key-Pair-Id': location['metadata']['Key-Pair-Id'],
+                    'CloudFront-Signature': location['metadata']['Signature'],
+                    'CloudFront-Policy': location['metadata']['Policy'],
+                    'ngsw-bypass': 'true'
+                }
+
+                location_url = f"{location_url.split('.m3u8')[0]}_{parse_variant_metadata(location['metadata'])}.m3u8"
+
+                response = sess.get(location_url, headers=headers, cookies=cookies)
+                response.raise_for_status()
+
+                # parse the m3u8 playlist content using the m3u8 library
+                playlist_obj = m3u8.loads(response)
+
+                # check if any .ts files are present
+                if any(segment.uri.endswith('.ts') for segment in playlist_obj.segments):
+                    return True
+                else:
+                    return False
+            except Exception:
+                return False
+        elif extension == "m3u8":
+            try:
+                location_url = f"{location_url.split('.m3u8')[0]}_{parse_variant_metadata(location['metadata'])}.m3u8?{location_url.split('?')[1]}"
+
+                response = sess.get(location_url, headers=headers)
+                response.raise_for_status()
+
+                # parse the m3u8 playlist content using the m3u8 library
+                playlist_obj = m3u8.loads(response)
+
+                # check if any .ts files are present
+                if any(segment.uri.endswith('.ts') for segment in playlist_obj.segments):
+                    return True
+                else:
+                    return False
+            except Exception:
+                return False
+        elif extension == "mpd":
+            return True
+        else:
+            return False  # default return false for anything else
+
+    def parse_variants(content: dict, content_type: str):  # content_type: media / preview
         nonlocal metadata, highest_variants_resolution, highest_variants_resolution_url, download_url, media_id, created_at, highest_variants_resolution_height, default_normal_mimetype, mimetype
         if content.get('locations'):
-            location_url = content['locations'][0]['location']
+            location: dict = content['locations'][0]
+            location_url: str = content['locations'][0]['location']
+            extension = "." + location_url.split('.')[-1].split('?')[0]  # file extension is not always m3u8 anymore
 
             current_variant_resolution = (content['width'] or 0) * (content['height'] or 0)
-            if current_variant_resolution > highest_variants_resolution and default_normal_mimetype == simplify_mimetype(content['mimetype']):
+            if current_variant_resolution > highest_variants_resolution and default_normal_mimetype == simplify_mimetype(content['mimetype']) and m3u8_has_data(location):
                 highest_variants_resolution = current_variant_resolution
                 highest_variants_resolution_height = content['height'] or 0
                 highest_variants_resolution_url = location_url
@@ -960,8 +1134,14 @@ def parse_media_info(media_info: dict, post_id = None):
                     try:
                         # use very specific metadata, bound to the specific media to get auth info
                         metadata = content['locations'][0]['metadata']
-                        highest_variants_resolution_url = f"{highest_variants_resolution_url.split('.m3u8')[0]}_{parse_variant_metadata(content['metadata'])}.m3u8?ngsw-bypass=true&Policy={metadata['Policy']}&Key-Pair-Id={metadata['Key-Pair-Id']}&Signature={metadata['Signature']}"
-                    except KeyError:pass # we pass here and catch below
+
+                        # m3u8 URLs should have the video height at the end (_1080.m3u8), which is not the case for .mpd
+                        if extension == '.m3u8':
+                            highest_variants_resolution_url = f"{highest_variants_resolution_url.split('.m3u8')[0]}_{parse_variant_metadata(content['metadata'])}.m3u8?ngsw-bypass=true&Policy={metadata['Policy']}&Key-Pair-Id={metadata['Key-Pair-Id']}&Signature={metadata['Signature']}"
+                        elif extension == '.mpd':
+                            highest_variants_resolution_url = f"{highest_variants_resolution_url}.mpd?ngsw-bypass=true&Policy={metadata['Policy']}&Key-Pair-Id={metadata['Key-Pair-Id']}&Signature={metadata['Signature']}"
+                    except KeyError:
+                        pass  # we pass here and catch below
 
                 """
                 parse fanslys date feature called "scheduled post" dates, these might greatly differ from actual post dates.
@@ -981,13 +1161,13 @@ def parse_media_info(media_info: dict, post_id = None):
     if 'location' in media_info['media']:
         variants = media_info['media']['variants']
         for content in variants:
-            parse_variants(content = content, content_type = 'media')
+            parse_variants(content=content, content_type='media')
 
     # previews: if media location is not found, we work with the preview media info instead
     if not download_url and 'preview' in media_info:
         variants = media_info['preview']['variants']
         for content in variants:
-            parse_variants(content = content, content_type = 'preview')
+            parse_variants(content=content, content_type='preview')
 
     """
     so the way this works is; we have these 4 base variables defined all over this function.
@@ -1482,7 +1662,7 @@ if any(['Timeline' in download_mode, 'Normal' in download_mode]):
             output(1, '\n Info', '<light-blue>', f"Inspecting Timeline cursor: {timeline_cursor}")
 
         try:
-            timeline_req = sess.get(f"https://apiv3.fansly.com/api/v1/timeline/{creator_id}?before={timeline_cursor}&after=0&wallId=&contentSearch=&ngsw-bypass=true", headers=headers)
+            timeline_req = sess.get(f"https://apiv3.fansly.com/api/v1/timelinenew/{creator_id}?before={timeline_cursor}&after=0&wallId=&contentSearch=&ngsw-bypass=true", headers=headers)
             if timeline_req.status_code == 200:
                 accessible_media = None
                 contained_posts = []

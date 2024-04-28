@@ -1,3 +1,5 @@
 config.ini
 start.bat
 .idea
+utils\__pycache__\*
+tests\*
