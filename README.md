@@ -1,9 +1,9 @@
-<div align="center">
+<p style="text-align: center;">
    This is a fork of ![Avnsx/fansly-downloader](https://github.com/Avnsx/fansly-downloader)
    to try and revive the project <br>
    I am not a good Python developer so any help with this project is very much appreciated <br>
    You can see the to-do list for this project at [#📃 To do list](#📃 To do list)
-</div>
+</p>
 
 <div align="center" style="font-size: smaller;">
   <h1>👋 Introducing <code>Fansly Downloader</code>: The Ultimate Content Downloading Tool</h1>
