@@ -1053,7 +1053,7 @@ def parse_media_info(media_info: dict, post_id = None):
             max_variant['w'], max_variant['h'] = max_variant['h'], max_variant['w']
         return max_variant['h']
 
-    def m3u8_has_data(location: dict):
+    def m3u8_has_data(content: dict):
         """
         Fansly's API has something I like to call red herrings,
         which is m3u8 file with no data in it.
@@ -1064,10 +1064,11 @@ def parse_media_info(media_info: dict, post_id = None):
         This will slow down the program by quite a bit due to the extra GET requests
         I would prefer to not have to do this, but I have no choice
         """
+        location: dict = content['locations'][0]
         location_url: str = location['location']
         extension = location_url.split('.')[-1].split('?')[0]
 
-        if not 'Key-Pair-Id' in location_url and extension == "m3u8":
+        if not ('Key-Pair-Id' in location_url) and extension == "m3u8":
             try:
                 cookies = {
                     'CloudFront-Key-Pair-Id': location['metadata']['Key-Pair-Id'],
@@ -1076,13 +1077,13 @@ def parse_media_info(media_info: dict, post_id = None):
                     'ngsw-bypass': 'true'
                 }
 
-                location_url = f"{location_url.split('.m3u8')[0]}_{parse_variant_metadata(location['metadata'])}.m3u8"
+                new_location_url = f"{location_url.split('.m3u8')[0]}_{parse_variant_metadata(content['metadata'])}.m3u8"
 
-                response = sess.get(location_url, headers=headers, cookies=cookies)
+                response = sess.get(new_location_url, headers=headers, cookies=cookies)
                 response.raise_for_status()
 
                 # parse the m3u8 playlist content using the m3u8 library
-                playlist_obj = m3u8.loads(response)
+                playlist_obj = m3u8.loads(response.text)
 
                 # check if any .ts files are present
                 if any(segment.uri.endswith('.ts') for segment in playlist_obj.segments):
@@ -1093,13 +1094,13 @@ def parse_media_info(media_info: dict, post_id = None):
                 return False
         elif extension == "m3u8":
             try:
-                location_url = f"{location_url.split('.m3u8')[0]}_{parse_variant_metadata(location['metadata'])}.m3u8?{location_url.split('?')[1]}"
+                location_url = f"{location_url.split('.m3u8')[0]}_{parse_variant_metadata(content['metadata'])}.m3u8?{location_url.split('?')[1]}"
 
                 response = sess.get(location_url, headers=headers)
                 response.raise_for_status()
 
                 # parse the m3u8 playlist content using the m3u8 library
-                playlist_obj = m3u8.loads(response)
+                playlist_obj = m3u8.loads(response.text)
 
                 # check if any .ts files are present
                 if any(segment.uri.endswith('.ts') for segment in playlist_obj.segments):
@@ -1120,10 +1121,10 @@ def parse_media_info(media_info: dict, post_id = None):
             location_url: str = content['locations'][0]['location']
             extension = "." + location_url.split('.')[-1].split('?')[0]  # file extension is not always m3u8 anymore
 
-            current_variant_resolution = (content['width'] or 0) * (content['height'] or 0)
-            if current_variant_resolution > highest_variants_resolution and default_normal_mimetype == simplify_mimetype(content['mimetype']) and m3u8_has_data(location):
+            current_variant_resolution = (content["height"] or 0) * (content["height"] or 0)
+            if current_variant_resolution > highest_variants_resolution and default_normal_mimetype == simplify_mimetype(content['mimetype']) and m3u8_has_data(content):
                 highest_variants_resolution = current_variant_resolution
-                highest_variants_resolution_height = content['height'] or 0
+                highest_variants_resolution_height = content["height"] or 0
                 highest_variants_resolution_url = location_url
                 media_id = int(content['id'])
                 mimetype = simplify_mimetype(content['mimetype'])
