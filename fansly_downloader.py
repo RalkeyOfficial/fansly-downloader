@@ -73,8 +73,8 @@ if len(sys.argv) > 1 and sys.argv[1] == '--update':
     # config.ini backwards compatibility fix (≤ v0.4) -> fix spelling mistake "seperate" to "separate"
     if 'seperate_messages' in config['Options']:
         config['Options']['separate_messages'] = config['Options'].pop('seperate_messages')
-    if 'seperate_previews' in config['Options']:
-        config['Options']['separate_previews'] = config['Options'].pop('seperate_previews')
+    if 'separate_previews' in config['Options']:
+        config['Options']['separate_previews'] = config['Options'].pop('separate_previews')
     with open(config_path, 'w', encoding='utf-8') as f:
         config.write(f)
     
