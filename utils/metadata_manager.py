@@ -148,5 +148,6 @@ class MetadataManager:
         if self.filetype in self.image_filetypes:
             with pyexiv2.Image(self.filepath) as image:
                 image.modify_exif(self.raw_metadata)
-        else:
-            self.raw_metadata.save(self.filepath)
+        # this code appears to do nothing as save() is not on raw_metadata
+        # else:
+        #     self.raw_metadata.save(self.filepath)
