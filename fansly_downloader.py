@@ -638,15 +638,16 @@ def download_m3u8(m3u8_url: str, save_path: str):
     segment = bytearray()
     for ts_content in ts_contents:
         segment += ts_content
-    
+
+    # Attempted to fix the error when audio does not exist, i think i fixed it, not sure, since i dont understand this code
     input_container = av.open(io.BytesIO(segment), format='mpegts')
     video_stream = input_container.streams.video[0]
-    audio_stream = input_container.streams.audio[0]
+    audio_stream = input_container.streams.audio[0] if input_container.streams.audio else None
 
     # define output container and streams
     output_container = av.open(f"{save_path}.mp4", 'w') # add .mp4 file extension
     video_stream = output_container.add_stream(template=video_stream)
-    audio_stream = output_container.add_stream(template=audio_stream)
+    audio_stream = output_container.add_stream(template=audio_stream) if audio_stream else None
 
     start_pts = None
     for packet in input_container.demux():
@@ -661,7 +662,7 @@ def download_m3u8(m3u8_url: str, save_path: str):
 
         if packet.stream == input_container.streams.video[0]:
             packet.stream = video_stream
-        elif packet.stream == input_container.streams.audio[0]:
+        elif audio_stream and packet.stream == input_container.streams.audio[0]:
             packet.stream = audio_stream
         output_container.mux(packet)
 
@@ -702,9 +703,7 @@ def download_mpd(mpd_url: str, save_path: str):
 
     highest_quality_video = max(video_representations, key=lambda x: int(x.attrib['bandwidth']))
     # check if audio exists before passing it along since it can lack audio
-    highest_quality_audio = None
-    if audio_representations:
-        highest_quality_audio = max(audio_representations, key=lambda x: int(x.attrib['bandwidth']))
+    highest_quality_audio = max(audio_representations, key=lambda x: int(x.attrib['bandwidth'])) if audio_representations else None
 
     # Extract the BaseURLs from the highest quality video and audio representations
     video_base_url = highest_quality_video.find('{urn:mpeg:dash:schema:mpd:2011}BaseURL').text
