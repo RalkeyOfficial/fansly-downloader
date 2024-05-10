@@ -1,20 +1,35 @@
-# fix in future: audio needs to be properly transcoded pre-saving from mp4 to mp3 & sort_download() needs to first parse what filesize a image is before trying to add pyexvi2 metadata to it
+#!/usr/bin/env python3
+
+__version__ = '0.4.4'
+__credits__ = [
+    'RalkeyOfficial',
+    'Avnsx',
+    'prof79',
+    'KasumiDev',
+    'FletcherD',
+    'XelaRellum',
+    'sunbart',
+]
+
+# TODO: sort_download() needs to first parse what filesize a image is before trying to add pyexvi2 metadata to it
+
 import requests, os, re, base64, hashlib, imagehash, io, traceback, sys, platform, subprocess, concurrent.futures, json, m3u8, av, time, mimetypes, configparser
 from random import randint, uniform
 from tkinter import Tk, filedialog
-from loguru import logger as log
-from functools import partialmethod
 from PIL import Image, ImageFile
 from time import sleep as s
 from rich.table import Column
 from rich.progress import Progress, BarColumn, TextColumn
-from configparser import RawConfigParser
 from os.path import join, exists
 from os import makedirs, getcwd
-from utils.update_util import delete_deprecated_files, check_latest_release, apply_old_config_values
+
+from utils.common import del_redudant_pyinstaller_files, compute_timezone_offset, remind_stargazing
+from utils.config import FanslyConfig, load_config
+from utils.config.validation import validate_adjust_config
+from utils.download_manager import MPD, M3U8
+from utils.enums import LOGLEVEL
+from utils.logger import output
 from utils.metadata_manager import MetadataManager
-import xml.etree.ElementTree as ET
-from ffmpeg import FFmpeg
 
 # tell PIL to be tolerant of files that are truncated
 ImageFile.LOAD_TRUNCATED_IMAGES = True
@@ -23,7 +38,7 @@ ImageFile.LOAD_TRUNCATED_IMAGES = True
 Image.MAX_IMAGE_PIXELS = None
 
 # define requests session
-sess = requests.Session()
+session = requests.Session()
 
 
 # cross-platform compatible, re-name downloaders terminal output window title
@@ -33,435 +48,39 @@ def set_window_title(title):
         subprocess.call('title {}'.format(title), shell=True)
     elif current_platform == 'Linux' or current_platform == 'Darwin':
         subprocess.call(['printf', r'\33]0;{}\a'.format(title)])
-set_window_title('Fansly Downloader')
-
-# base64 code to display logo in console
-print(base64.b64decode('CiAg4paI4paI4paI4paI4paI4paI4paI4pWXIOKWiOKWiOKWiOKWiOKWiOKVlyDilojilojilojilZcgICDilojilojilZfilojilojilojilojilojilojilojilZfilojilojilZcgIOKWiOKWiOKVlyAgIOKWiOKWiOKVlyAgICDilojilojilojilojilojilojilZcg4paI4paI4pWXICAgICAgICAgIOKWiOKWiOKWiOKWiOKWiOKVlyDilojilojilojilojilojilojilZcg4paI4paI4paI4paI4paI4paI4pWXIAogIOKWiOKWiOKVlOKVkOKVkOKVkOKVkOKVneKWiOKWiOKVlOKVkOKVkOKWiOKWiOKVl+KWiOKWiOKWiOKWiOKVlyAg4paI4paI4pWR4paI4paI4pWU4pWQ4pWQ4pWQ4pWQ4pWd4paI4paI4pWRICDilZrilojilojilZcg4paI4paI4pWU4pWdICAgIOKWiOKWiOKVlOKVkOKVkOKWiOKWiOKVl+KWiOKWiOKVkSAgICAgICAgIOKWiOKWiOKVlOKVkOKVkOKWiOKWiOKVl+KWiOKWiOKVlOKVkOKVkOKWiOKWiOKVl+KWiOKWiOKVlOKVkOKVkOKWiOKWiOKVlwogIOKWiOKWiOKWiOKWiOKWiOKVlyAg4paI4paI4paI4paI4paI4paI4paI4pWR4paI4paI4pWU4paI4paI4pWXIOKWiOKWiOKVkeKWiOKWiOKWiOKWiOKWiOKWiOKWiOKVl+KWiOKWiOKVkSAgIOKVmuKWiOKWiOKWiOKWiOKVlOKVnSAgICAg4paI4paI4pWRICDilojilojilZHilojilojilZEgICAgICAgICDilojilojilojilojilojilojilojilZHilojilojilojilojilojilojilZTilZ3ilojilojilojilojilojilojilZTilZ0KICDilojilojilZTilZDilZDilZ0gIOKWiOKWiOKVlOKVkOKVkOKWiOKWiOKVkeKWiOKWiOKVkeKVmuKWiOKWiOKVl+KWiOKWiOKVkeKVmuKVkOKVkOKVkOKVkOKWiOKWiOKVkeKWiOKWiOKVkSAgICDilZrilojilojilZTilZ0gICAgICDilojilojilZEgIOKWiOKWiOKVkeKWiOKWiOKVkSAgICAgICAgIOKWiOKWiOKVlOKVkOKVkOKWiOKWiOKVkeKWiOKWiOKVlOKVkOKVkOKVkOKVnSDilojilojilZTilZDilZDilZDilZ0gCiAg4paI4paI4pWRICAgICDilojilojilZEgIOKWiOKWiOKVkeKWiOKWiOKVkSDilZrilojilojilojilojilZHilojilojilojilojilojilojilojilZHilojilojilojilojilojilojilojilZfilojilojilZEgICAgICAg4paI4paI4paI4paI4paI4paI4pWU4pWd4paI4paI4paI4paI4paI4paI4paI4pWXICAgIOKWiOKWiOKVkSAg4paI4paI4pWR4paI4paI4pWRICAgICDilojilojilZEgICAgIAogIOKVmuKVkOKVnSAgICAg4pWa4pWQ4pWdICDilZrilZDilZ3ilZrilZDilZ0gIOKVmuKVkOKVkOKVkOKVneKVmuKVkOKVkOKVkOKVkOKVkOKVkOKVneKVmuKVkOKVkOKVkOKVkOKVkOKVkOKVneKVmuKVkOKVnSAgICAgICDilZrilZDilZDilZDilZDilZDilZ0g4pWa4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWdICAgIOKVmuKVkOKVnSAg4pWa4pWQ4pWd4pWa4pWQ4pWdICAgICDilZrilZDilZ0gICAgIAogICAgICAgICAgICAgICAgICAgICAgICBkZXZlbG9wZWQgYnkgZ2l0aHViLmNvbS9Bdm5zeC9mYW5zbHktZG93bmxvYWRlcgogICAgICAgICAgICAgIGZvcmtlZCAmIHN1cHBvcnRlciBvbiBnaXRodWIuY29tL1JhbGtleU9mZmljaWFsL2ZhbnNseS1kb3dubG9hZGVy').decode('utf-8'))
-
-# most of the time, we utilize this to display colored output rather than logging or prints
-def output(level: int, log_type: str, color: str, mytext: str):
-    try:
-        log.level(log_type, no = level, color = color)
-    except TypeError:
-        pass # level failsafe
-    log.__class__.type = partialmethod(log.__class__.log, log_type)
-    log.remove()
-    log.add(sys.stdout, format = "<level>{level}</level> | <white>{time:HH:mm}</white> <level>|</level><light-white>| {message}</light-white>", level=log_type)
-    log.type(mytext)
-
-# mostly used to attempt to open fansly downloaders documentation
-def open_url(url_to_open: str):
-    s(10)
-    try:
-        import webbrowser
-        webbrowser.open(url_to_open, new=0, autoraise=True)
-    except Exception:
-        pass
-
-output(1,'\n Info','<light-blue>','Reading config.ini file ...')
-config = RawConfigParser()
-config_path = join(getcwd(), 'config.ini')
-if len(config.read(config_path)) != 1:
-    output(2,'\n [1]ERROR','<red>', f"config.ini file not found or can not be read.\n{21*' '}Please download it & make sure it is in the same directory as fansly downloader")
-    input('\nPress Enter to close ...')
-    exit()
 
 
-## starting here: self updating functionality
-# if started with --update start argument
-if len(sys.argv) > 1 and sys.argv[1] == '--update':
-    # config.ini backwards compatibility fix (≤ v0.4) -> fix spelling mistake "seperate" to "separate"
-    if 'seperate_messages' in config['Options']:
-        config['Options']['separate_messages'] = config['Options'].pop('seperate_messages')
-    if 'seperate_previews' in config['Options']:
-        config['Options']['separate_previews'] = config['Options'].pop('seperate_previews')
-    with open(config_path, 'w', encoding='utf-8') as f:
-        config.write(f)
-    
-    # config.ini backwards compatibility fix (≤ v0.4) -> config option "naming_convention" & "update_recent_download" removed entirely
-    options_to_remove = ['naming_convention', 'update_recent_download']
-    for option in options_to_remove:
-        if option in config['Options']:
-            config['Options'].pop(option)
-            with open(config_path, 'w', encoding='utf-8') as f:
-                config.write(f)
-            output(3, '\n WARNING', '<yellow>', f"Just removed \'{option}\' from the config.ini file,\n\
-                   {6*' '}as the whole option is no longer supported after version 0.3.5")
-    
-    # get the version string of what we've just been updated to
-    version_string = sys.argv[2]
+def main(config: FanslyConfig):
+    set_window_title(f"Fansly Downloader v{__version__}")
 
-    # check if old config.ini exists, compare each pre-existing value of it and apply it to new config.ini
-    apply_old_config_values()
-    
-    # temporary: delete deprecated files
-    delete_deprecated_files()
-
-    # get release description and if existent; display it in terminal
-    check_latest_release(update_version = version_string, intend = 'update')
-
-    # read the config.ini file for a last time
-    config.read(config_path)
-else:
-    # check if a new version is available
-    check_latest_release(current_version = config.get('Other', 'version'), intend = 'check')
-
-
-## read & verify config values
-try:
-    # TargetedCreator
-    config_username = config.get('TargetedCreator', 'Username') # string
-
-    # MyAccount
-    config_token = config.get('MyAccount', 'Authorization_Token') # string
-    config_useragent = config.get('MyAccount', 'User_Agent') # string
-
-    # Options
-    download_mode = config.get('Options', 'download_mode').capitalize() # Normal (Timeline & Messages), Timeline, Messages, Single (Single by post id) or Collections -> str
-    show_downloads = config.getboolean('Options', 'show_downloads') # True, False -> boolean
-    download_media_previews = config.getboolean('Options', 'download_media_previews') # True, False -> boolean
-    open_folder_when_finished = config.getboolean('Options', 'open_folder_when_finished') # True, False -> boolean
-    separate_messages = config.getboolean('Options', 'separate_messages') # True, False -> boolean
-    separate_previews = config.getboolean('Options', 'separate_previews') # True, False -> boolean
-    separate_timeline = config.getboolean('Options', 'separate_timeline') # True, False -> boolean
-    utilise_duplicate_threshold = config.getboolean('Options', 'utilise_duplicate_threshold') # True, False -> boolean
-    download_directory = config.get('Options', 'download_directory') # Local_directory, C:\MyCustomFolderFilePath -> str
-    metadata_handling = config.get('Options', 'metadata_handling').capitalize() # Advanced, Simple -> str
-
-    # Other
-    current_version = config.get('Other', 'version') # str
-except configparser.NoOptionError as e:
-    error_string = str(e)
-    output(2,'\n ERROR','<red>', f"Your config.ini file is very malformed, please download a fresh version of it from GitHub.\n{error_string}")
-    input('\nPress Enter to close ...')
-    exit()
-except ValueError as e:
-    error_string = str(e)
-    if 'a boolean' in error_string:
-        output(2,'\n [1]ERROR','<red>', f"\'{error_string.rsplit('boolean: ')[1]}\' is malformed in the configuration file! This value can only be True or False\n\
-            {6*' '}Read the Wiki > Explanation of provided programs & their functionality > config.ini")
-        open_url('https://github.com/RalkeyOfficial/fansly-downloader/wiki/Explanation-of-provided-programs-&-their-functionality#explanation-of-configini')
-        input('\nPress Enter to close ...')
-        exit()
-    else:
-        output(2,'\n [2]ERROR','<red>', f"You have entered a wrong value in the config.ini file -> \'{error_string}\'\n\
-            {6*' '}Read the Wiki > Explanation of provided programs & their functionality > config.ini")
-        open_url('https://github.com/RalkeyOfficial/fansly-downloader/wiki/Explanation-of-provided-programs-&-their-functionality#explanation-of-configini')
-        input('\nPress Enter to close ...')
-        exit()
-except (KeyError, NameError) as key:
-    output(2,'\n [3]ERROR','<red>', f"\'{key}\' is missing or malformed in the configuration file!\n\
-        {6*' '}Read the Wiki > Explanation of provided programs & their functionality > config.ini")
-    open_url('https://github.com/RalkeyOfficial/fansly-downloader/wiki/Explanation-of-provided-programs-&-their-functionality#explanation-of-configini')
-    input('\nPress Enter to close ...')
-    exit()
-
-
-# update window title with specific downloader version
-set_window_title(f"Fansly Downloader v{current_version}")
-
-
-# delete previous redundant pyinstaller folders, older then an hour
-def del_redudant_pyinstaller_files():
-    try:
-        base_path = sys._MEIPASS
-    except Exception:
-        return
-
-    temp_dir = os.path.abspath(os.path.join(base_path, '..'))
-    current_time = time.time()
-
-    for folder in os.listdir(temp_dir):
-        try:
-            item = os.path.join(temp_dir, folder)
-            if folder.startswith('_MEI') and os.path.isdir(item) and (current_time - os.path.getctime(item)) > 3600:
-                for root, dirs, files in os.walk(item, topdown=False):
-                    for file in files:
-                        os.remove(os.path.join(root, file))
-                    for dir in dirs:
-                        os.rmdir(os.path.join(root, dir))
-                os.rmdir(item)
-        except Exception:
-            pass
-del_redudant_pyinstaller_files()
-
-
-# occasionally notfiy user to star repository
-def remind_stargazing():
-    stargazers_count, total_downloads = 0, 0
-    
-    # depends on global variable current_version
-    stats_headers = {'user-agent': f"Avnsx/Fansly Downloader {current_version}",
-                     'referer': f"Avnsx/Fansly Downloader {current_version}",
-                     'accept-language': 'en-US,en;q=0.9'}
-    
-    # get total_downloads count
-    stargazers_check_request = requests.get('https://api.github.com/repos/RalkeyOfficial/fansly-downloader/releases', allow_redirects = True, headers = stats_headers)
-    if not stargazers_check_request.ok:
-        return False
-    stargazers_check_request = stargazers_check_request.json()
-    for x in stargazers_check_request:
-        total_downloads += x['assets'][0]['download_count'] or 0
-    
-    # get stargazers_count
-    downloads_check_request = requests.get('https://api.github.com/repos/RalkeyOfficial/fansly-downloader', allow_redirects = True, headers = stats_headers)
-    if not downloads_check_request.ok:
-        return False
-    downloads_check_request = downloads_check_request.json()
-    stargazers_count = downloads_check_request['stargazers_count'] or 0
-
-    percentual_stars = round(stargazers_count / total_downloads * 100, 2)
-    
-    # display message (intentionally "lnfo" with lvl 4)
-    output(4,'\n lnfo','<light-red>', f"Fansly Downloader was downloaded {total_downloads} times, but only {percentual_stars} % of You(!) have starred it.\n\
-           {6*' '}Stars directly influence my willingness to continue maintaining the project.\n\
-            {5*' '}Help the repository grow today, by leaving a star on it and sharing it to others online!")
-    s(15)
-
-if randint(1,100) <= 19:
-    try:
-        remind_stargazing()
-    except Exception: # irrelevant enough, to pass regardless what errors may happen
-        pass
-
-
-
-## starting here: general validation of all input values in config.ini
-
-# validate input value for config_username in config.ini
-while True:
-    usern_base_text = f'Invalid targeted creators username value; '
-    usern_error = False
-
-    if 'ReplaceMe' in config_username:
-        output(3, '\n WARNING', '<yellow>', f"Config.ini value for TargetedCreator > Username > \'{config_username}\'; is unmodified.")
-        usern_error = True
-
-    # remove @ from username in config file & save changes
-    if '@' in config_username and not usern_error:
-        config_username = config_username.replace('@', '')
-        config.set('TargetedCreator', 'username', config_username)
-        with open(config_path, 'w', encoding='utf-8') as config_file:
-            config.write(config_file)
-
-    # intentionally dont want to just .strip() spaces, because like this, it might give the user a food for thought, that he's supposed to enter the username tag after @ and not creators display name
-    if ' ' in config_username and not usern_error:
-        output(3, ' WARNING', '<yellow>', f"{usern_base_text}must be a concatenated string. No spaces!\n")
-        usern_error = True
-
-    if not usern_error:
-        if len(config_username) < 4 or len(config_username) > 30:
-            output(3, ' WARNING', '<yellow>', f"{usern_base_text}must be between 4 and 30 characters long!\n")
-            usern_error = True
-        else:
-            invalid_chars = set(config_username) - set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_")
-            if invalid_chars:
-                output(3, ' WARNING', '<yellow>', f"{usern_base_text}should only contain\n{20*' '}alphanumeric characters, hyphens, or underscores!\n")
-                usern_error = True
-
-    if not usern_error:
-        output(1, '\n info', '<light-blue>', 'Username validation successful!')
-        if config_username != config['TargetedCreator']['username']:
-            config.set('TargetedCreator', 'username', config_username)
-            with open(config_path, 'w', encoding='utf-8') as config_file:
-                config.write(config_file)
-        break
-    else:
-        output(5,'\n Config','<light-magenta>', f"Populate the value, with the username handle (e.g.: @MyCreatorsName)\n\
-            {7*' '}of the fansly creator, whom you would like to download content from.")
-        config_username = input(f"\n{19*' '} ► Enter a valid username: ")
-
-
-
-# only if config_token is not set up already; verify if plyvel is installed
-plyvel_installed, processed_from_path = False, None
-if any([not config_token, 'ReplaceMe' in config_token]) or config_token and len(config_token) < 50:
-    try:
-        import plyvel
-        plyvel_installed = True
-    except ImportError:
-        output(3,'\n WARNING','<yellow>', f"Fansly Downloaders automatic configuration for the authorization_token in the config.ini file will be skipped.\
-            \n{20*' '}Your system is missing required plyvel (python module) builds by Siyao Chen (@liviaerxin).\
-            \n{20*' '}Installable with \'pip3 install plyvel-ci\' or from github.com/liviaerxin/plyvel/releases/latest")
-
-# semi-automatically set up value for config_token (authorization_token) based on the users input
-if plyvel_installed and any([not config_token, 'ReplaceMe' in config_token, config_token and len(config_token) < 50]):
-    
-    # fansly-downloader plyvel dependant package imports
-    from utils.config_util import (
-        get_browser_paths,
-        parse_browser_from_string,
-        find_leveldb_folders,
-        get_auth_token_from_leveldb_folder,
-        process_storage_folders,
-        link_fansly_downloader_to_account
+    # base64 code to display logo in console
+    print(
+        base64.b64decode(
+            'CiAg4paI4paI4paI4paI4paI4paI4paI4pWXIOKWiOKWiOKWiOKWiOKWiOKVlyDilojilojilojilZcgICDilojilojilZfilojilojilojilojilojilojilojilZfilojilojilZcgIOKWiOKWiOKVlyAgIOKWiOKWiOKVlyAgICDilojilojilojilojilojilojilZcg4paI4paI4pWXICAgICAgICAgIOKWiOKWiOKWiOKWiOKWiOKVlyDilojilojilojilojilojilojilZcg4paI4paI4paI4paI4paI4paI4pWXIAogIOKWiOKWiOKVlOKVkOKVkOKVkOKVkOKVneKWiOKWiOKVlOKVkOKVkOKWiOKWiOKVl+KWiOKWiOKWiOKWiOKVlyAg4paI4paI4pWR4paI4paI4pWU4pWQ4pWQ4pWQ4pWQ4pWd4paI4paI4pWRICDilZrilojilojilZcg4paI4paI4pWU4pWdICAgIOKWiOKWiOKVlOKVkOKVkOKWiOKWiOKVl+KWiOKWiOKVkSAgICAgICAgIOKWiOKWiOKVlOKVkOKVkOKWiOKWiOKVl+KWiOKWiOKVlOKVkOKVkOKWiOKWiOKVl+KWiOKWiOKVlOKVkOKVkOKWiOKWiOKVlwogIOKWiOKWiOKWiOKWiOKWiOKVlyAg4paI4paI4paI4paI4paI4paI4paI4pWR4paI4paI4pWU4paI4paI4pWXIOKWiOKWiOKVkeKWiOKWiOKWiOKWiOKWiOKWiOKWiOKVl+KWiOKWiOKVkSAgIOKVmuKWiOKWiOKWiOKWiOKVlOKVnSAgICAg4paI4paI4pWRICDilojilojilZHilojilojilZEgICAgICAgICDilojilojilojilojilojilojilojilZHilojilojilojilojilojilojilZTilZ3ilojilojilojilojilojilojilZTilZ0KICDilojilojilZTilZDilZDilZ0gIOKWiOKWiOKVlOKVkOKVkOKWiOKWiOKVkeKWiOKWiOKVkeKVmuKWiOKWiOKVl+KWiOKWiOKVkeKVmuKVkOKVkOKVkOKVkOKWiOKWiOKVkeKWiOKWiOKVkSAgICDilZrilojilojilZTilZ0gICAgICDilojilojilZEgIOKWiOKWiOKVkeKWiOKWiOKVkSAgICAgICAgIOKWiOKWiOKVlOKVkOKVkOKWiOKWiOKVkeKWiOKWiOKVlOKVkOKVkOKVkOKVnSDilojilojilZTilZDilZDilZDilZ0gCiAg4paI4paI4pWRICAgICDilojilojilZEgIOKWiOKWiOKVkeKWiOKWiOKVkSDilZrilojilojilojilojilZHilojilojilojilojilojilojilojilZHilojilojilojilojilojilojilojilZfilojilojilZEgICAgICAg4paI4paI4paI4paI4paI4paI4pWU4pWd4paI4paI4paI4paI4paI4paI4paI4pWXICAgIOKWiOKWiOKVkSAg4paI4paI4pWR4paI4paI4pWRICAgICDilojilojilZEgICAgIAogIOKVmuKVkOKVnSAgICAg4pWa4pWQ4pWdICDilZrilZDilZ3ilZrilZDilZ0gIOKVmuKVkOKVkOKVkOKVneKVmuKVkOKVkOKVkOKVkOKVkOKVkOKVneKVmuKVkOKVkOKVkOKVkOKVkOKVkOKVneKVmuKVkOKVnSAgICAgICDilZrilZDilZDilZDilZDilZDilZ0g4pWa4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWdICAgIOKVmuKVkOKVnSAg4pWa4pWQ4pWd4pWa4pWQ4pWdICAgICDilZrilZDilZ0gICAgIAogICAgICAgICAgICAgICAgICAgICAgICBkZXZlbG9wZWQgYnkgZ2l0aHViLmNvbS9Bdm5zeC9mYW5zbHktZG93bmxvYWRlcgogICAgICAgICAgICAgICBmb3JrZWQgJiBzdXBwb3J0ZXIgb24gZ2l0aHViLmNvbS9SYWxrZXlPZmZpY2lhbC9mYW5zbHktZG93bmxvYWRlcg==')
+        .decode('utf-8')
     )
 
-    output(3,'\n WARNING','<yellow>', f"Authorization token \'{config_token}\' is unmodified,\n\
-        {12*' '}missing or malformed in the configuration file.\n\
-        {12*' '}Will automatically configure by fetching fansly authorization token,\n\
-        {12*' '}from all browser storages available on the local system.")
+    if randint(1, 100) <= 19:
+        try:
+            remind_stargazing(__version__)
+        except Exception:  # irrelevant enough, to pass regardless what errors may happen
+            pass
 
-    browser_paths = get_browser_paths()
-    processed_account = None
-    
-    for path in browser_paths:
-        processed_token = None
-    
-        # if not firefox, process leveldb folders
-        if 'firefox' not in path.lower():
-            leveldb_folders = find_leveldb_folders(path)
-            for folder in leveldb_folders:
-                processed_token = get_auth_token_from_leveldb_folder(folder)
-                if processed_token:
-                    processed_account = link_fansly_downloader_to_account(processed_token)
-                    break  # exit the inner loop if a valid processed_token is found
-    
-        # if firefox, process sqlite db instead
-        else:
-            processed_token = process_storage_folders(path)
-            if processed_token:
-                processed_account = link_fansly_downloader_to_account(processed_token)
-    
-        if all([processed_account, processed_token]):
-            processed_from_path = parse_browser_from_string(path) # we might also utilise this for guessing the useragent
+    del_redudant_pyinstaller_files()
+    load_config(config)
 
-            # let user pick a account, to connect to fansly downloader
-            output(5,'\n Config','<light-magenta>', f"Do you want to link the account \'{processed_account}\' to Fansly Downloader? (found in: {processed_from_path})")
-            while True:
-                user_input_acc_verify = input(f"{20*' '}► Type either \'Yes\' or \'No\': ").strip().lower()
-                if user_input_acc_verify == "yes" or user_input_acc_verify == "no":
-                    break # break user input verification
-                else:
-                    output(2,'\n ERROR','<red>', f"Please enter either \'Yes\' or \'No\', to decide if you want to link to \'{processed_account}\'")
-
-            # based on user input; write account username & auth token to config.ini
-            if user_input_acc_verify == "yes" and all([processed_account, processed_token]):
-                config_token = processed_token
-                config.set('MyAccount', 'authorization_token', config_token)
-                with open(config_path, 'w', encoding='utf-8') as f:
-                    config.write(f)
-                output(1,'\n Info','<light-blue>', f"Success! Authorization token applied to config.ini file\n")
-                break # break whole loop
-
-    # if no account auth, was found in any of the users browsers
-    if not processed_account:
-        output(2,'\n ERROR','<red>', f"Your Fansly account was not found in any of your browser\'s local storage.\n\
-        {10*' '}Did you not recently browse Fansly with an authenticated session?\
-        {10*' '}Please read & apply the \'Get-Started\' tutorial instead.")
-        open_url('https://github.com/RalkeyOfficial/fansly-downloader/wiki/Get-Started')
-        input('\n Press Enter to close ..')
-        exit()
-    
-    # if users decisions have led to auth token still being invalid
-    elif any([not config_token, 'ReplaceMe' in config_token]) or config_token and len(config_token) < 50:
-        output(2,'\n ERROR','<red>', f"Reached the end and the authentication token in config.ini file is still invalid!\n\
-        {10*' '}Please read & apply the \'Get-Started\' tutorial instead.")
-        open_url('https://github.com/RalkeyOfficial/fansly-downloader/wiki/Get-Started')
-        input('\n Press Enter to close ..')
-        exit()
+    validate_adjust_config(config)
 
 
-# validate input value for "user_agent" in config.ini
-ua_if_failed = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36' # if no matches / error just set random UA
-def guess_user_agent(user_agents: dict, based_on_browser: str = processed_from_path or 'Chrome'):
-
-    if processed_from_path == 'Microsoft Edge':
-        based_on_browser = 'Edg' # msedge only reports "Edg" as its identifier
-
-        # could do the same for opera, opera gx, brave. but those are not supported by @jnrbsn's repo. so we just return chrome ua
-        # in general his repo, does not provide the most accurate latest user-agents, if I am borred some time in the future,
-        # I might just write my own similar repo and use that instead
-
-    try:
-        os_name = platform.system()
-        if os_name == "Windows":
-            for user_agent in user_agents:
-                if based_on_browser in user_agent and "Windows" in user_agent:
-                    match = re.search(r'Windows NT ([\d.]+)', user_agent)
-                    if match:
-                        os_version = match.group(1)
-                        if os_version in user_agent:
-                            return user_agent
-        elif os_name == "Darwin":  # macOS
-            for user_agent in user_agents:
-                if based_on_browser in user_agent and "Macintosh" in user_agent:
-                    match = re.search(r'Mac OS X ([\d_.]+)', user_agent)
-                    if match:
-                        os_version = match.group(1).replace('_', '.')
-                        if os_version in user_agent:
-                            return user_agent
-        elif os_name == "Linux":
-            for user_agent in user_agents:
-                if based_on_browser in user_agent and "Linux" in user_agent:
-                    match = re.search(r'Linux ([\d.]+)', user_agent)
-                    if match:
-                        os_version = match.group(1)
-                        if os_version in user_agent:
-                            return user_agent
-    except Exception:
-        output(2,'\n [4]ERROR','<red>', f'Regexing user-agent from online source failed: {traceback.format_exc()}')
-
-    output(3, '\n WARNING', '<yellow>', f"Missing user-agent for {based_on_browser} & os: {os_name}. Set chrome & windows ua instead")
-    return ua_if_failed
-
-if not config_useragent or config_useragent and len(config_useragent) < 40 or 'ReplaceMe' in config_useragent:
-    output(3, '\n WARNING', '<yellow>', f"Browser user-agent in config.ini \'{config_useragent}\', is most likely incorrect.")
-    if processed_from_path:
-        output(5,'\n Config','<light-magenta>', f"Will adjust it with a educated guess;\n\
-            {7*' '}based on the combination of your operating system & specific browser")
-    else:
-        output(5,'\n Config','<light-magenta>', f"Will adjust it with a educated guess, hard-set for chrome browser.\n\
-            {7*' '}If you're not using chrome, you might want to replace it in the config.ini file later on.\n\
-            {7*' '}more information regarding this topic is on the fansly downloader Wiki.")
-
-    try:
-        # thanks Jonathan Robson (@jnrbsn) - for continously providing these up-to-date user-agents
-        user_agent_req = requests.get('https://jnrbsn.github.io/user-agents/user-agents.json', headers = {'User-Agent': f"Avnsx/Fansly Downloader {current_version}", 'accept-language': 'en-US,en;q=0.9'})
-        if user_agent_req.ok:
-            user_agent_req = user_agent_req.json()
-            config_useragent = guess_user_agent(user_agent_req)
-        else:
-            config_useragent = ua_if_failed
-    except requests.exceptions.RequestException:
-        config_useragent = ua_if_failed
-
-    # save useragent modification to config file
-    config.set('MyAccount', 'user_agent', config_useragent)
-    with open(config_path, 'w', encoding='utf-8') as config_file:
-        config.write(config_file)
-
-    output(1,'\n Info','<light-blue>', f"Success! Applied a browser user-agent to config.ini file\n")
+config = FanslyConfig(__version__)
 
 
-
-## starting here: general epoch timestamp to local timezone manipulation
-# calculates offset from global utc time, to local systems time
-def compute_timezone_offset():
-    offset = time.timezone if (time.localtime().tm_isdst == 0) else time.altzone
-    diff_from_utc = int(offset / 60 / 60 * -1)
-    hours_in_seconds = diff_from_utc * 3600 * -1
-    return diff_from_utc, hours_in_seconds
-
+# starting here: general epoch timestamp to local timezone manipulation
 # compute timezone offset and hours in seconds once
 diff_from_utc, hours_in_seconds = compute_timezone_offset()
 
-# detect 12 vs 24 hour time format usage (not sure if this properly works)
-time_format = 12 if ('AM' in time.strftime('%X') or 'PM' in time.strftime('%X')) else 24
 
-# convert every epoch timestamp passed, to the time it was for the local computers timezone
-def get_adjusted_datetime(epoch_timestamp: int, diff_from_utc: int = diff_from_utc, hours_in_seconds: int = hours_in_seconds):
-    adjusted_timestamp = epoch_timestamp + diff_from_utc * 3600
-    adjusted_timestamp += hours_in_seconds
-    # start of strings are ISO 8601; so that they're sortable by Name after download
-    if time_format == 24:
-        return time.strftime("%Y-%m-%d_at_%H-%M", time.localtime(adjusted_timestamp))
-    else:
-        return time.strftime("%Y-%m-%d_at_%I-%M-%p", time.localtime(adjusted_timestamp))
-
-
-
-## starting here: current working directory generation & validation
+# starting here: current working directory generation & validation
 # if the users custom provided filepath is invalid; a tkinter dialog will open during runtime, asking to adjust download path
 def ask_correct_dir():
     global BASE_DIR_NAME
@@ -563,14 +182,13 @@ def open_location(filepath: str):
     return True
 
 
-
 # un/scramble auth token
-F, c ='fNs', config_token
-if c[-3:]==F:
-    c=c.rstrip(F)
-    A,B,C=['']*len(c),7,0
+F, c = 'fNs', config_token
+if c[-3:] == F:
+    c = c.rstrip(F)
+    A, B, C = ['']*len(c), 7, 0
     for D in range(B):
-        for E in range(D,len(A),B):A[E]=c[C];C+=1
+        for E in range(D, len(A), B): A[E] = c[C]; C += 1
     config_token = ''.join(A)
 
 
@@ -582,198 +200,6 @@ headers = {
     'authorization': config_token,
     'User-Agent': config_useragent,
 }
-
-
-
-# m3u8 compability
-def download_m3u8(m3u8_url: str, save_path: str):
-    # parse m3u8_url for required strings
-    parsed_url = {k: v for k, v in [s.split('=') for s in m3u8_url.split('?')[-1].split('&')]}
-    policy = parsed_url.get('Policy')
-    key_pair_id = parsed_url.get('Key-Pair-Id')
-    signature = parsed_url.get('Signature')
-    m3u8_url = m3u8_url.split('.m3u8')[0] + '.m3u8' # re-construct original .m3u8 base link
-    split_m3u8_url = m3u8_url.rsplit('/', 1)[0] # used for constructing .ts chunk links
-    save_path = save_path.rsplit('.m3u8')[0] # remove file_extension from save_path
-
-    cookies = {
-        'CloudFront-Key-Pair-Id': key_pair_id,
-        'CloudFront-Policy': policy,
-        'CloudFront-Signature': signature,
-        'ngsw-bypass': 'true'
-    }
-
-    # download the m3u8 playlist
-    playlist_content_req = sess.get(m3u8_url, headers=headers, cookies=cookies)
-    if not playlist_content_req.ok:
-        output(2,'\n [12]ERROR','<red>', f'Failed downloading m3u8; at playlist_content request. Response code: {playlist_content_req.status_code}\n{playlist_content_req.text}')
-        return False
-    playlist_content = playlist_content_req.text
-
-    # parse the m3u8 playlist content using the m3u8 library
-    playlist_obj = m3u8.loads(playlist_content)
-
-    # get a list of all the .ts files in the playlist
-    ts_files = [segment.uri for segment in playlist_obj.segments if segment.uri.endswith('.ts')]
-
-    # define a nested function to download a single .ts file and return the content
-    def download_ts(ts_file: str):
-        ts_url = f"{split_m3u8_url}/{ts_file}"
-        ts_response = sess.get(ts_url, headers=headers, cookies=cookies, stream=True)
-        buffer = io.BytesIO()
-        for chunk in ts_response.iter_content(chunk_size=1024):
-            buffer.write(chunk)
-        ts_content = buffer.getvalue()
-        return ts_content
-
-    # if m3u8 seems like it might be bigger in total file size; display loading bar
-    text_column = TextColumn(f"", table_column=Column(ratio=0.355))
-    bar_column = BarColumn(bar_width=60, table_column=Column(ratio=2))
-    disable_loading_bar = False if len(ts_files) > 15 else True
-    progress = Progress(text_column, bar_column, expand=True, transient=True, disable=disable_loading_bar)
-    with progress:
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            ts_contents = [file for file in progress.track(executor.map(download_ts, ts_files), total=len(ts_files))]
-    
-    segment = bytearray()
-    for ts_content in ts_contents:
-        segment += ts_content
-
-    # Attempted to fix the error when audio does not exist, i think i fixed it, not sure, since i dont understand this code
-    input_container = av.open(io.BytesIO(segment), format='mpegts')
-    video_stream = input_container.streams.video[0]
-    audio_stream = input_container.streams.audio[0] if input_container.streams.audio else None
-
-    # define output container and streams
-    output_container = av.open(f"{save_path}.mp4", 'w') # add .mp4 file extension
-    video_stream = output_container.add_stream(template=video_stream)
-    audio_stream = output_container.add_stream(template=audio_stream) if audio_stream else None
-
-    start_pts = None
-    for packet in input_container.demux():
-        if packet.dts is None:
-            continue
-
-        if start_pts is None:
-            start_pts = packet.pts
-
-        packet.pts -= start_pts
-        packet.dts -= start_pts
-
-        if packet.stream == input_container.streams.video[0]:
-            packet.stream = video_stream
-        elif audio_stream and packet.stream == input_container.streams.audio[0]:
-            packet.stream = audio_stream
-        output_container.mux(packet)
-
-    # close containers
-    input_container.close()
-    output_container.close()
-
-    return True
-
-def download_mpd(mpd_url: str, save_path: str):
-    # parse mpd_url for required strings
-    parsed_url = {k: v for k, v in [s.split('=') for s in mpd_url.split('?')[-1].split('&')]}
-    policy = parsed_url.get('Policy')
-    key_pair_id = parsed_url.get('Key-Pair-Id')
-    signature = parsed_url.get('Signature')
-    mpd_url = mpd_url.split('.mpd')[0] + '.mpd'  # re-construct original .mpd base link
-    save_path = save_path.rsplit('.mpd')[0] + ".mp4"  # remove file_extension from save_path
-
-    cookies = {
-        'CloudFront-Key-Pair-Id': key_pair_id,
-        'CloudFront-Policy': policy,
-        'CloudFront-Signature': signature,
-        'ngsw-bypass': 'true'
-    }
-
-    # Send a GET request to the MPD URL
-    playlist_content = sess.get(mpd_url, headers=headers, cookies=cookies)
-    if not playlist_content.ok:
-        output(2, '\n [12]ERROR', '<red>', f'Failed downloading mpd; at playlist_content request. Response code: {playlist_content.status_code}\n{playlist_content.text}')
-        return False
-
-    # Parse the MPD XML file
-    root = ET.fromstring(playlist_content.content)
-
-    # Find the highest quality video and audio representations
-    video_representations = root.findall('.//{urn:mpeg:dash:schema:mpd:2011}AdaptationSet[@mimeType="video/mp4"]/{urn:mpeg:dash:schema:mpd:2011}Representation')
-    audio_representations = root.findall('.//{urn:mpeg:dash:schema:mpd:2011}AdaptationSet[@mimeType="audio/mp4"]/{urn:mpeg:dash:schema:mpd:2011}Representation')
-
-    highest_quality_video = max(video_representations, key=lambda x: int(x.attrib['bandwidth']))
-    # check if audio exists before passing it along since it can lack audio
-    highest_quality_audio = max(audio_representations, key=lambda x: int(x.attrib['bandwidth'])) if audio_representations else None
-
-    # Extract the BaseURLs from the highest quality video and audio representations
-    video_base_url = highest_quality_video.find('{urn:mpeg:dash:schema:mpd:2011}BaseURL').text
-    audio_base_url = highest_quality_audio.find('{urn:mpeg:dash:schema:mpd:2011}BaseURL').text if highest_quality_audio else None
-
-    # Construct the full URLs for the video and audio files
-    base_url = '/'.join(mpd_url.split('/')[:-1]) + '/'
-    video_url = base_url + video_base_url
-    audio_url = base_url + audio_base_url if audio_base_url else None
-
-    # Create a hidden temp folder to store downloads in
-    hidden_folder_dir = ".temp"
-    os_name = platform.system()
-    if os_name == 'Windows':
-        # Create the folder if it doesn't exist
-        if not os.path.exists(hidden_folder_dir):
-            os.mkdir(hidden_folder_dir)
-
-        # Set the folder's hidden attribute in Windows
-        subprocess.run(['attrib', '+h', hidden_folder_dir], check=True)
-    else:
-        if not os.path.exists(hidden_folder_dir):
-            os.mkdir(hidden_folder_dir)
-
-    def download_file(url, file_path):
-        if url is None:
-            return
-        res = sess.get(url, headers=headers, cookies=cookies, stream=True)
-        res.raise_for_status()  # Raise an exception if the request fails
-        with open(file_path, 'wb') as f:
-            for chunk in res.iter_content(chunk_size=1024):
-                f.write(chunk)
-
-    # hidden temp folder + file names
-    video_file_path = os.path.join(hidden_folder_dir, "temp_video.mp4")
-    audio_file_path = os.path.join(hidden_folder_dir, "temp_audio.mp4")
-
-    # start download of the video and audio, and put it in the hidden folder
-    download_file(video_url, video_file_path)
-    download_file(audio_url, audio_file_path)
-
-    # combine the video and audio together into 1 file IF both video and audio are present
-    if video_url and audio_url:
-        # I am aware that using FFMPEG is not the best practice, however I don't know of any better alternative
-        ffmpeg = (
-            FFmpeg()
-            .option("y")
-            .input(video_file_path)
-            .input(audio_file_path)
-            .output(
-                save_path,
-                codec="copy",
-            )
-        )
-        ffmpeg.execute()
-    elif video_url and not audio_url:  # else move the video in .temp folder to the normal path + rename it
-        os.rename(video_file_path, save_path)
-
-    # remove the video and audio file in the temp folder after everything is done
-    try:  # if there is not a video file at video_file_path, continue the code without giving error
-        os.remove(video_file_path)
-    except OSError:
-        pass
-
-    try:  # if there is not a audio file at audio_file_path, continue the code without giving error
-        os.remove(audio_file_path)
-    except OSError:
-        pass
-
-    return True
 
 
 # define base threshold (used for when modules don't provide vars)
@@ -798,6 +224,7 @@ pic_count, vid_count, duplicate_count = 0, 0, 0 # count downloaded content & dup
 # deduplication functionality variables
 recent_photo_media_ids, recent_video_media_ids, recent_audio_media_ids = set(), set(), set()
 recent_photo_hashes, recent_video_hashes, recent_audio_hashes = set(), set(), set()
+
 
 def sort_download(accessible_media: dict):
     # global required so we can use them at the end of the whole code in global space
@@ -878,11 +305,14 @@ def sort_download(accessible_media: dict):
 
         if file_extension == 'm3u8':
             # handle the download of a m3u8 file
-            file_downloaded = download_m3u8(m3u8_url=download_url, save_path=save_path)
-            if file_downloaded:
+            result = M3U8(headers, sess).download(m3u8_url=download_url, save_path=save_path)
+
+            if result['status']:
+                output(LOGLEVEL.ERROR, result['message'], 12)
+
+            if result['status'] == 0:
                 # after being transcoded, the file is now a mp4
                 save_path = save_path.replace('.m3u8', '.mp4')
-                file_extension = 'mp4'
                 if append_metadata:
                     # add the temp-stored media_id to the now transcoded mp4 file, as Exif metadata
                     metadata_manager.set_filepath(save_path)
@@ -894,11 +324,15 @@ def sort_download(accessible_media: dict):
                 vid_count += 1 if 'video' in mimetype else 0
         elif file_extension == 'mpd':
             # handle the download of a mpd file
-            file_downloaded = download_mpd(mpd_url=download_url, save_path=save_path)
-            if file_downloaded:
+            result = MPD(headers, sess).download(mpd_url=download_url, save_path=save_path)
+
+            if result['status']:
+                output(LOGLEVEL.ERROR, result['message'], 12)
+
+            if result['status'] == 0:
                 # after being transcoded, the file is now a mp4
                 save_path = save_path.replace('.mpd', '.mp4')
-                file_extension = 'mp4'
+
                 if append_metadata:
                     # add the temp-stored media_id to the now transcoded mp4 file, as Exif metadata
                     metadata_manager.set_filepath(save_path)

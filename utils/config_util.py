@@ -1,22 +1,14 @@
 import os, plyvel, json, requests, traceback, psutil, platform, sqlite3, sys
-from functools import partialmethod
-from loguru import logger as log
 from os.path import join
 from time import sleep as s
+
+from utils.enums import LOGLEVEL
+from utils.logger import output
+
 
 # overwrite default exit, with a pyinstaller compatible one
 def exit():
     os._exit(0)
-
-def output(level: int, log_type: str, color: str, mytext: str):
-    try:
-        log.level(log_type, no = level, color = color)
-    except TypeError:
-        pass # level failsafe
-    log.__class__.type = partialmethod(log.__class__.log, log_type)
-    log.remove()
-    log.add(sys.stdout, format = "<level>{level}</level> | <white>{time:HH:mm}</white> <level>|</level><light-white>| {message}</light-white>", level=log_type)
-    log.type(mytext)
 
 # Function to recursively search for "storage" folders and process SQLite files
 def process_storage_folders(directory):
@@ -58,7 +50,7 @@ def process_sqlite_file(sqlite_file):
     except sqlite3.Error as e:
         sqlite_error = str(e)
         if 'locked' in sqlite_error and 'irefox' in sqlite_file:
-            output(5,'\n Config','<light-magenta>', f"Firefox browser is open, but it needs to be closed for automatic configurator\n\
+            output(LOGLEVEL.CONFIG, f"Firefox browser is open, but it needs to be closed for automatic configurator\n\
             {11*' '}to search your fansly account in the browsers storage.\n\
             {11*' '}Please save any important work within the browser & close the browser yourself,\n\
             {11*' '}else press Enter to close it programmatically and continue configuration.")
@@ -141,8 +133,8 @@ def close_browser_by_name(browser_name):
             closed = True
 
     if closed:
-        output(5,'\n Config','<light-magenta>', f"Succesfully closed {browser_name} browser.")
-        s(3) # give browser time to close its children processes
+        output(LOGLEVEL.CONFIG, f"Succesfully closed {browser_name} browser.")
+        s(3)  # give browser time to close its children processes
 
 def parse_browser_from_string(string):
     compatible = ['Firefox', 'Brave', 'Opera GX', 'Opera', 'Chrome', 'Edge']
@@ -172,7 +164,7 @@ def get_auth_token_from_leveldb_folder(leveldb_folder):
     except plyvel._plyvel.IOError as e:
         error_message = str(e)
         used_browser = parse_browser_from_string(error_message)
-        output(5,'\n Config','<light-magenta>', f"{used_browser} browser is open, but it needs to be closed for automatic configurator\n\
+        output(LOGLEVEL.CONFIG, f"{used_browser} browser is open, but it needs to be closed for automatic configurator\n\
         {11*' '}to search your fansly account in the browsers storage.\n\
         {11*' '}Please save any important work within the browser & close the browser yourself,\n\
         {11*' '}else press Enter to close it programmatically and continue configuration.")

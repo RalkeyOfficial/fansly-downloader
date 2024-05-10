@@ -32,7 +32,7 @@ You can see the to-do list for this project at [#📃 To do list](#-to-do-list)
     <img src="https://img.shields.io/badge/Compatible with-grey?style=flat-square" alt="Compatible with text" />
   </a>
   <a href="https://www.python.org/downloads/">
-    <img src="https://img.shields.io/static/v1?style=flat-square&label=%F0%9F%90%8D%20Python&message=3.7%2B&color=3c8c50" alt="Compatibility" />
+    <img src="https://img.shields.io/static/v1?style=flat-square&label=%F0%9F%90%8D%20Python&message=3.8%2B&color=3c8c50" alt="Compatibility" />
   </a>
   <a href="https://github.com/RalkeyOfficial/fansly-downloader#%EF%B8%8F-set-up">
     <img src="https://img.shields.io/badge/%F0%9F%AA%9F-Windows-0078D6?style=flat-square" alt="Compatible with Windows" />
